@@ -1,0 +1,104 @@
+name: maru-poc
+
+networks:
+  linea:
+    driver: bridge
+
+services:
+  initialization:
+    image: busybox:latest
+    container_name: init
+    entrypoint: ["sh","/initialization/init.sh"]
+    environment:
+      CREATE_EMPTY_BLOCKS: "${CREATE_EMPTY_BLOCKS:-false}"
+    volumes:
+      - ./initialization/:/initialization:rw
+    networks: [linea]
+
+  sequencer:
+    depends_on:
+      initialization:
+        condition: service_completed_successfully
+    image: hyperledger/besu:25.8.0
+    container_name: sequencer
+    environment:
+      LOG4J_CONFIGURATION_FILE: /var/lib/besu/log4j.xml
+      JAVA_OPTS: -Xmx512m -XX:+UnlockExperimentalVMOptions -XX:+UseZGC
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        /opt/besu/bin/besu --config-file=/var/lib/besu/config.toml \
+        --genesis-file=/initialization/genesis-besu.json \
+        --node-private-key-file="/var/lib/besu/key" \
+        --Xplugins-external-enabled=false
+    volumes:
+      - ./sequencer/config.toml:/var/lib/besu/config.toml:ro
+      - ./sequencer/log4j.xml:/var/lib/besu/log4j.xml:ro
+      - ./sequencer/key:/var/lib/besu/key:ro
+      - ./initialization/:/initialization/:ro
+    ports:
+      - "8545:8545"     # JSON-RPC
+      - "8550:8550"     # Engine API
+      - "8551:8551"     # Additional port
+      - "30303:30303"   # P2P
+    healthcheck:
+      test: [ "CMD-SHELL", "bash -c \"[ -f /tmp/pid ]\"" ]
+      interval: 1s
+      timeout: 1s
+      retries: 120
+    networks: [linea]
+
+  rollup-boost:
+    image: flashbots/rollup-boost:latest
+    container_name: rollup-boost
+    depends_on:
+      sequencer:
+        condition: service_healthy
+    command:
+      - --l2-jwt-path=/jwt/jwt.hex
+      - --l2-url=http://sequencer:8550
+      - --builder-jwt-path=/jwt/jwt.hex
+      - --builder-url=http://sequencer:8550
+      - --rpc-host=0.0.0.0
+      - --rpc-port=8551
+      - --log-level=debug
+      - --tracing
+    volumes:
+      - ./jwt:/jwt:ro
+    ports:
+      - "8551:8551"     # Rollup-Boost Engine API proxy
+    healthcheck:
+      # Simple port check - Rollup-Boost is healthy if port 8551 is accessible
+      test:
+        - CMD-SHELL
+        - bash -c 'exec 3<>/dev/tcp/127.0.0.1/8551 && exec 3<&-'
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks: [linea]
+
+  maru:
+    image: consensys/maru:${MARU_TAG:-develop}
+    container_name: maru
+    depends_on:
+      rollup-boost:
+        condition: service_started
+    command:
+      [
+        "java",
+        "-Dlog4j2.configurationFile=configs/log4j.xml",
+        "-jar","maru.jar",
+        "--maru-genesis-file","configs/genesis.json",
+        "--config","configs/config.dev.toml"
+      ]
+    volumes:
+      - ./maru/config.dev.toml:/opt/consensys/maru/configs/config.dev.toml:ro
+      - ./maru/log4j.xml:/opt/consensys/maru/configs/log4j.xml:ro
+      - ./initialization/genesis-maru.json:/opt/consensys/maru/configs/genesis.json:ro
+      - ./maru/0x1b9abeec3215d8ade8a33607f2cf0f4f60e5f0d0.key:/tmp/maru-db/private-key
+      - ./jwt:/opt/consensys/docker/jwt:ro   # maru expects jwt here
+    ports:
+      - "8080:8080"
+    networks: [linea]

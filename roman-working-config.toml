@@ -1,0 +1,40 @@
+[persistence]
+data-path = "/data"  # Adjusted for Docker container path
+
+[p2p]
+port = 31007  # Keep our port different from static peer
+ip-address = "0.0.0.0"
+static-peers = ["/ip4/3.129.120.128/tcp/31005/p2p/16Uiu2HAmR33t8RZiAHovuH9iH2UuUrajrbfyYowiYDAQo3D5Y9wg"]  # FIXED: 31005 not 31006!
+reconnect-delay = "500ms"
+
+[p2p.discovery]
+port = 31008  # Discovery port (different from main P2P port)
+bootnodes = []
+refresh-interval = "3s"
+
+[payload-validator]
+engine-api-endpoint = { endpoint = "http://linea-besu:8551" }  # Adjusted for Docker container networking
+eth-api-endpoint = { endpoint = "http://linea-besu:8545" }
+
+[observability]
+port = 9090
+jvm-metrics-enabled = true
+prometheus-metrics-enabled = true
+
+[api]
+port = 8080
+
+[syncing]
+peer-chain-height-polling-interval = "5s"
+el-sync-status-refresh-interval = "5s"
+sync-target-selection = "Highest"
+# sync-target-selection = { _type = "MostFrequent", peer-chain-height-granularity = 10 }
+desync-tolerance = 10
+
+[syncing.download]
+block-range-request-timeout = "10s"
+blocks-batch-size = 10
+blocks-parallelism = 10
+max-retries = 5
+backoff-delay = "1s"
+use-unconditional-random-download-peer = false

@@ -1,0 +1,32 @@
+allow-empty-blocks = true
+
+[persistence]
+data-path = "/data"
+private-key-path = "/data/private-key"
+
+# Remove [qbft] section - this makes Maru run as validator
+# For follower/sync node, we don't need qbft configuration
+
+[p2p]
+port = 31007  # Use different port than static peer (31006)
+ip-address = "0.0.0.0"
+static-peers = ["/ip4/3.129.120.128/tcp/31006/p2p/16Uiu2HAmR33t8RZiAHovuH9iH2UuUrajrbfyYowiYDAQo3D5Y9wg"]
+
+[payload-validator]
+engine-api-endpoint = { endpoint = "http://linea-besu:8550" }  # This will work now that both are in same network
+eth-api-endpoint    = { endpoint = "http://linea-besu:8545" }
+
+[api]
+port = 8080
+
+[observability]
+port = 9090
+prometheus-metrics-enabled = true
+
+[chain]
+genesis-file = "/opt/consensys/maru/configs/maru-genesis.json"
+
+[syncing]
+peer-chain-height-polling-interval = "5s"
+el-sync-status-refresh-interval    = "5s"
+sync-target-selection              = "Highest"

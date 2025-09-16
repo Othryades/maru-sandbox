@@ -1,0 +1,15 @@
+# ./maru/config.dev.toml
+
+# Engine/Execution (Besu)
+[engine]
+execution_endpoint = "http://besu:8550"
+jwt_secret_path    = "/opt/consensys/docker/jwt/jwt.hex"
+
+# P2P (local)
+[p2p]
+listen_addr = "/ip4/0.0.0.0/tcp/31006"
+# static_peers_file = "/opt/consensys/maru/configs/static-peers.txt"  # optional
+
+# Timers (dev-friendly, fast blocks)
+[consensus]
+block_time_seconds = 2

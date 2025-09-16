@@ -1,0 +1,15 @@
+{
+  "chainId": 59141,
+  "config": {
+    "0": {
+      "type": "delegated",
+      "blockTimeSeconds": 1
+    },
+    "1755165600": {
+      "type": "qbft",
+      "validatorSet": ["0xbfe4ebafa3269c3d52ca59d6eda342af47cb7dde"],
+      "blockTimeSeconds": 2,
+      "elFork": "Shanghai"
+    }
+  }
+}
