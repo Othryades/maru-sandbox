@@ -84,7 +84,7 @@ curl -X POST http://localhost:8545 -H "Content-Type: application/json" \
 ### **Next Steps ?**
 1. **Implement pre-confirmation endpoints** - Add client-facing pre-confirmation API
 2. **Add rapid transaction validation** - Balance, nonce, gas checks in ~200ms
-3. **Build promise/fulfillment system** - Store and honor pre-confirmation promises
+3. **Build promise/fulfillment system** - Store and fulfill pre-confirmation promises
 4. **Load testing** - Test with concurrent transactions
 
 ## Log Evidence - Builder Forwarding/Broadcasting Confirmed
