@@ -1,15 +1,45 @@
-# ./maru/config.dev.toml
+allow-empty-blocks = true
 
-# Engine/Execution (Besu)
-[engine]
-execution_endpoint = "http://besu:8550"
-jwt_secret_path    = "/opt/consensys/docker/jwt/jwt.hex"
+[persistence]
+data-path="/tmp/maru-db"
+private-key-path="/tmp/maru-db/private-key"
 
-# P2P (local)
+[qbft]
+fee-recipient = "0x0000000000000000000000000000000000000000"
+
 [p2p]
-listen_addr = "/ip4/0.0.0.0/tcp/31006"
-# static_peers_file = "/opt/consensys/maru/configs/static-peers.txt"  # optional
+port = 3322
+ip-address = "0.0.0.0"
+static-peers = []
+reconnect-delay = "500 ms"
 
-# Timers (dev-friendly, fast blocks)
-[consensus]
-block_time_seconds = 2
+[p2p.discovery]
+port = 3324
+bootnodes = ["enr:-Iu4QHk0YN5IRRnufqsWkbO6Tn0iGTx4H_hnyiIEdXDuhIe0KKrxmaECisyvO40mEmmqKLhz_tdIhx2yFBK8XFKhvxABgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQOgBvD-dv0cX5szOeEsiAMtwxnP1q5CA5toYDrgUyOhV4N0Y3CCJBKDdWRwgiQT"]
+refresh-interval = "2 minutes"
+
+[payload-validator]
+engine-api-endpoint = { endpoint = "http://rollup-boost:8551" }
+eth-api-endpoint = { endpoint = "http://sequencer:8545" }
+
+[observability]
+port = 9090
+jvm-metrics-enabled = true
+prometheus-metrics-enabled = true
+
+[api]
+port = 8080
+
+[syncing]
+peer-chain-height-polling-interval = "5 seconds"
+el-sync-status-refresh-interval = "5 seconds"
+sync-target-selection = "Highest"
+desync-tolerance = 10
+
+[syncing.download]
+block-range-request-timeout = "10 seconds"
+blocks-batch-size = 10
+blocks-parallelism = 10
+max-retries = 5
+backoff-delay = "1 seconds"
+use-unconditional-random-download-peer = false

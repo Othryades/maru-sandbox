@@ -8,9 +8,9 @@ services:
   initialization:
     image: busybox:latest
     container_name: init
-    entrypoint: ["sh","/initialization/init.sh"]
+    entrypoint: ["sh", "/initialization/init.sh"]
     environment:
-      CREATE_EMPTY_BLOCKS: "${CREATE_EMPTY_BLOCKS:-false}"
+      CREATE_EMPTY_BLOCKS: "${CREATE_EMPTY_BLOCKS:-true}"
     volumes:
       - ./initialization/:/initialization:rw
     networks: [linea]
@@ -38,12 +38,11 @@ services:
       - ./sequencer/key:/var/lib/besu/key:ro
       - ./initialization/:/initialization/:ro
     ports:
-      - "8545:8545"     # JSON-RPC
-      - "8550:8550"     # Engine API
-      - "8551:8551"     # Additional port
-      - "30303:30303"   # P2P
+      - "8545:8545" # JSON-RPC
+      - "8550:8550" # Engine API
+      - "30303:30303" # P2P
     healthcheck:
-      test: [ "CMD-SHELL", "bash -c \"[ -f /tmp/pid ]\"" ]
+      test: ["CMD-SHELL", 'bash -c "[ -f /tmp/pid ]"']
       interval: 1s
       timeout: 1s
       retries: 120
@@ -67,7 +66,7 @@ services:
     volumes:
       - ./jwt:/jwt:ro
     ports:
-      - "8551:8551"     # Rollup-Boost Engine API proxy
+      - "8551:8551" # Rollup-Boost Engine API proxy
     healthcheck:
       # Simple port check - Rollup-Boost is healthy if port 8551 is accessible
       test:
@@ -89,16 +88,19 @@ services:
       [
         "java",
         "-Dlog4j2.configurationFile=configs/log4j.xml",
-        "-jar","maru.jar",
-        "--maru-genesis-file","configs/genesis.json",
-        "--config","configs/config.dev.toml"
+        "-jar",
+        "maru.jar",
+        "--maru-genesis-file",
+        "configs/genesis.json",
+        "--config",
+        "configs/config.dev.toml",
       ]
     volumes:
-      - ./maru/config.dev.toml:/opt/consensys/maru/configs/config.dev.toml:ro
+      - ./config.dev.toml:/opt/consensys/maru/configs/config.dev.toml:ro
       - ./maru/log4j.xml:/opt/consensys/maru/configs/log4j.xml:ro
       - ./initialization/genesis-maru.json:/opt/consensys/maru/configs/genesis.json:ro
       - ./maru/0x1b9abeec3215d8ade8a33607f2cf0f4f60e5f0d0.key:/tmp/maru-db/private-key
-      - ./jwt:/opt/consensys/docker/jwt:ro   # maru expects jwt here
+      - ./jwt:/opt/consensys/docker/jwt:ro # maru expects jwt here
     ports:
       - "8080:8080"
     networks: [linea]
