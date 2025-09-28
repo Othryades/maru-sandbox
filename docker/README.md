@@ -1,6 +1,6 @@
 # Linea + Rollup-Boost POC
 
-This POC demonstrates the integration of **Flashbots Rollup-Boost** with Linea's execution and consensus stack as a block builder sidecar.
+This POC demonstrates the integration of **Flashbots Rollup-Boost** (https://github.com/flashbots/rollup-boost) with Linea's execution and consensus stack as a block builder sidecar.
 
 ## Architecture Overview
 
@@ -18,11 +18,11 @@ Maru (CL) → Rollup-Boost (Builder Sidecar) → Besu (EL)
 
 ## Key Achievements
 
-✅ **Complete Integration**: Real Flashbots Rollup-Boost container operational  
-✅ **Builder Multiplexing**: Engine API calls sent to both proposer AND builder  
-✅ **Transaction Forwarding**: Transactions forwarded to both proposer and builder  
-✅ **JSON-RPC Proxy**: All client calls proxied through Rollup-Boost  
-✅ **Authentication**: JWT working across all components  
+ **Complete Integration**: Real Flashbots Rollup-Boost container operational  
+ **Builder Multiplexing**: Engine API calls sent to both proposer AND builder  
+ **Transaction Forwarding**: Transactions forwarded to both proposer and builder  
+ **JSON-RPC Proxy**: All client calls proxied through Rollup-Boost  
+ **Authentication**: JWT working across all components  
 
 ## Quick Start
 
@@ -69,7 +69,7 @@ curl -X POST http://localhost:8545 -H "Content-Type: application/json" \
 
 ## Current Status & Next Steps
 
-### ✅ **Proven Working**
+### **Proven Working**
 - Rollup-Boost builder sidecar integrated with Linea
 - Engine API multiplexing to proposer AND builder (confirmed in logs)
 - Transaction forwarding to both proposer and builder
@@ -81,10 +81,10 @@ curl -X POST http://localhost:8545 -H "Content-Type: application/json" \
 - Same Besu instance used as both proposer and builder
 - Engine API compatibility issues with consensus layer
 
-### 🚀 **Next Steps**
+### **Next Steps ?**
 1. **Implement pre-confirmation endpoints** - Add client-facing pre-confirmation API
-2. **Separate builder instance** - Configure dedicated external builder
-3. **Pre-confirmation logic** - Add validation and promise mechanism
+2. **Add rapid transaction validation** - Balance, nonce, gas checks in ~200ms
+3. **Build promise/fulfillment system** - Store and honor pre-confirmation promises
 4. **Load testing** - Test with concurrent transactions
 
 ## Technical Notes
@@ -92,4 +92,3 @@ curl -X POST http://localhost:8545 -H "Content-Type: application/json" \
 - **Genesis timing fix**: `CREATE_EMPTY_BLOCKS=true` prevents Shanghai/TTD conflicts
 - **Port mapping**: 8551 (Rollup-Boost), 8545/8550 (Besu), 8080 (Maru)  
 - **Network**: Custom Docker bridge for service communication
-- **Dependencies**: Proper startup ordering with health checks
