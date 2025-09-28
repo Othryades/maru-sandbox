@@ -1,27 +1,27 @@
 # Linea + Rollup-Boost POC
 
-This POC demonstrates the integration of **Flashbots Rollup-Boost** with Linea's execution and consensus stack to achieve sub-300ms pre-confirmations.
+This POC demonstrates the integration of **Flashbots Rollup-Boost** with Linea's execution and consensus stack as a block builder sidecar.
 
 ## Architecture Overview
 
-**Sidecar Mode Integration:**
+**Builder Sidecar Integration:**
 ```
-Client → Rollup-Boost (Proxy) → Besu (Execution Layer)
-            ↑
-         Maru (Consensus Layer)
+Maru (CL) → Rollup-Boost (Builder Sidecar) → Besu (EL)
+              ↓ multiplexes to ↓
+         Proposer + Builder (same Besu)
 ```
 
 - **Maru (CL)**: Linea's consensus client (port 8080)
-- **Rollup-Boost**: Flashbots proxy for pre-confirmations (port 8551)  
-- **Besu (EL)**: Hyperledger Besu execution layer (ports 8545/8550)
+- **Rollup-Boost**: Flashbots block builder sidecar (port 8551)  
+- **Besu (EL)**: Hyperledger Besu as proposer AND builder (ports 8545/8550)
 - **JWT Authentication**: Secured Engine API communication
 
 ## Key Achievements
 
-✅ **Complete Integration**: Real Flashbots Rollup-Boost container running  
-✅ **JSON-RPC Proxy**: All client calls forwarded through Rollup-Boost  
-✅ **Transaction Flow**: 13ms submission latency demonstrated  
-✅ **Block Production**: Continuous block generation (when direct)  
+✅ **Complete Integration**: Real Flashbots Rollup-Boost container operational  
+✅ **Builder Multiplexing**: Engine API calls sent to both proposer AND builder  
+✅ **Transaction Forwarding**: Transactions forwarded to both proposer and builder  
+✅ **JSON-RPC Proxy**: All client calls proxied through Rollup-Boost  
 ✅ **Authentication**: JWT working across all components  
 
 ## Quick Start
@@ -38,13 +38,13 @@ CREATE_EMPTY_BLOCKS=true MARU_TAG=2a2eab0 docker compose -f compose.yaml -f comp
 
 ## Testing & Validation
 
-### Real Transaction Test
+### Builder Workflow Test
 ```bash
-node test-real-transaction.js
+node test-builder-complete-workflow.js
 ```
-**Measures**: Actual transaction submission latency through Rollup-Boost proxy
+**Tests**: Complete builder workflow with multiplexing to proposer and builder
 
-### Integration Test Suite  
+### Basic Integration Test  
 ```bash
 ./test-rollup-boost-poc.sh
 ```
@@ -70,21 +70,22 @@ curl -X POST http://localhost:8545 -H "Content-Type: application/json" \
 ## Current Status & Next Steps
 
 ### ✅ **Proven Working**
-- Rollup-Boost sidecar architecture viable with Linea
-- JSON-RPC request forwarding (13ms latency)
+- Rollup-Boost builder sidecar integrated with Linea
+- Engine API multiplexing to proposer AND builder (confirmed in logs)
+- Transaction forwarding to both proposer and builder
 - Complete Docker-based development environment
 - JWT authentication across all components
 
-### ⚠️ **Known Issue**  
-- Engine API forwarding (`engine_forkchoiceUpdatedV3`) compatibility
-- Maru → Rollup-Boost → Besu chain breaks consensus flow
-- Direct Maru → Besu works perfectly (blocks produced continuously)
+### ⚠️ **Current Limitations**  
+- No pre-confirmation logic implemented in Rollup-Boost
+- Same Besu instance used as both proposer and builder
+- Engine API compatibility issues with consensus layer
 
-### 🚀 **Production Readiness**
-1. **Resolve Engine API forwarding** - compatibility between Maru and Rollup-Boost
-2. **Implement pre-confirmation logic** - actual ~200ms response (currently simulated)
-3. **Load testing** - concurrent transaction handling
-4. **Monitoring integration** - production observability
+### 🚀 **Next Steps**
+1. **Implement pre-confirmation endpoints** - Add client-facing pre-confirmation API
+2. **Separate builder instance** - Configure dedicated external builder
+3. **Pre-confirmation logic** - Add validation and promise mechanism
+4. **Load testing** - Test with concurrent transactions
 
 ## Technical Notes
 

@@ -63,10 +63,12 @@ services:
       - --rpc-port=8551
       - --log-level=debug
       - --tracing
+      - --metrics
     volumes:
       - ./jwt:/jwt:ro
     ports:
       - "8551:8551" # Rollup-Boost Engine API proxy
+      - "9090:9090" # Rollup-Boost metrics
     healthcheck:
       # Simple port check - Rollup-Boost is healthy if port 8551 is accessible
       test:
