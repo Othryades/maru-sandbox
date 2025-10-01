@@ -85,7 +85,7 @@ curl -X POST http://localhost:8545 -H "Content-Type: application/json" \
 - **Protocol incompatibility identified**: OP Stack vs Linea Stack differences confirmed
 - **Technical feasibility proven**: Flashblocks + Linea integration is viable
 
-### 🚀 **Next Steps**
+###  **Next Steps**
 1. **Fix Docker entrypoint** - Resolve op-rbuilder container startup issue
 2. **Resolve protocol compatibility** - Adapt Besu for Flashblocks OR create Linea ↔ OP Stack bridge  
 3. **Test real pre-confirmations** - Measure 200ms Flashblocks intervals
