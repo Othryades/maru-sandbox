@@ -1,0 +1,14 @@
+FROM flashbots-op-rbuilder:latest AS source
+
+FROM debian:bookworm-slim AS runtime
+
+# Install minimal dependencies
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy the binary from our built image
+COPY --from=source /app/op-rbuilder /usr/local/bin/rbuilder
+
+# Set correct entrypoint
+ENTRYPOINT ["/usr/local/bin/rbuilder"]

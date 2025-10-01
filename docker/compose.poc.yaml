@@ -48,17 +48,47 @@ services:
       retries: 120
     networks: [linea]
 
+  op-rbuilder:
+    image: flashbots-op-rbuilder:latest
+    container_name: op-rbuilder
+    depends_on:
+      sequencer:
+        condition: service_healthy
+    environment:
+      - RUST_LOG=info
+    entrypoint: ["/app/rbuilder"]
+    command:
+      - "node"
+      - "--chain"
+      - "/chain/chain-config.json"
+      - "--http"
+      - "--http.addr=0.0.0.0"
+      - "--http.port=8545"
+      - "--authrpc.addr=0.0.0.0"
+      - "--authrpc.port=8551"
+      - "--authrpc.jwtsecret=/jwt/jwt.hex"
+      - "--metrics"
+    volumes:
+      - ./jwt:/jwt:ro
+      - ./op-chain-config.json:/chain/chain-config.json:ro
+    ports:
+      - "8547:8545" # JSON-RPC for op-rbuilder
+      - "8552:8551" # Engine API for op-rbuilder
+    networks: [linea]
+
   rollup-boost:
     image: flashbots/rollup-boost:latest
     container_name: rollup-boost
     depends_on:
       sequencer:
         condition: service_healthy
+      op-rbuilder:
+        condition: service_started
     command:
       - --l2-jwt-path=/jwt/jwt.hex
       - --l2-url=http://sequencer:8550
       - --builder-jwt-path=/jwt/jwt.hex
-      - --builder-url=http://sequencer:8550
+      - --builder-url=http://op-rbuilder:8551
       - --rpc-host=0.0.0.0
       - --rpc-port=8551
       - --log-level=debug
@@ -106,3 +136,6 @@ services:
     ports:
       - "8080:8080"
     networks: [linea]
+
+volumes:
+  base_reth_data:
