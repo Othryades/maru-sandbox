@@ -37,13 +37,13 @@ import maru.config.QbftConfig
 import maru.config.SyncingConfig
 import maru.config.SyncingConfig.SyncTargetSelection
 import maru.config.ValidatorElNode
-import maru.config.consensus.ElFork
-import maru.config.consensus.qbft.DifficultyAwareQbftConfig
-import maru.config.consensus.qbft.QbftConsensusConfig
-import maru.consensus.ForkIdHashProvider
-import maru.consensus.ForkIdHasher
+import maru.consensus.ChainFork
+import maru.consensus.ClFork
+import maru.consensus.DifficultyAwareQbftConfig
+import maru.consensus.ElFork
 import maru.consensus.ForkSpec
 import maru.consensus.ForksSchedule
+import maru.consensus.QbftConsensusConfig
 import maru.consensus.state.FinalizationProvider
 import maru.core.SealedBeaconBlock
 import maru.core.Validator
@@ -54,8 +54,10 @@ import maru.extensions.fromHexToByteArray
 import maru.p2p.NoOpP2PNetwork
 import maru.p2p.P2PNetwork
 import maru.p2p.P2PNetworkImpl
-import maru.p2p.messages.StatusMessageFactory
+import maru.p2p.fork.ForkPeeringManager
+import maru.p2p.messages.StatusManager
 import maru.serialization.SerDe
+import maru.syncing.SyncStatusProvider
 import net.consensys.linea.metrics.MetricsFacade
 import org.hyperledger.besu.plugin.services.MetricsSystem as BesuMetricsSystem
 
@@ -132,7 +134,7 @@ class MaruFactory(
               DifficultyAwareQbftConfig(
                 QbftConsensusConfig(
                   validatorSet = setOf(Validator(validatorAddress.fromHexToByteArray())),
-                  elFork = ElFork.Paris,
+                  fork = ChainFork(ClFork.QBFT_PHASE0, ElFork.Paris),
                 ),
                 terminalTotalDifficulty = ttd!!,
               ),
@@ -143,7 +145,7 @@ class MaruFactory(
             configuration =
               QbftConsensusConfig(
                 validatorSet = setOf(Validator(validatorAddress.fromHexToByteArray())),
-                elFork = ElFork.Shanghai,
+                fork = ChainFork(ClFork.QBFT_PHASE0, ElFork.Shanghai),
               ),
           ),
           ForkSpec(
@@ -152,7 +154,7 @@ class MaruFactory(
             configuration =
               QbftConsensusConfig(
                 validatorSet = setOf(Validator(validatorAddress.fromHexToByteArray())),
-                elFork = ElFork.Cancun,
+                fork = ChainFork(ClFork.QBFT_PHASE0, ElFork.Cancun),
               ),
           ),
           ForkSpec(
@@ -161,7 +163,7 @@ class MaruFactory(
             configuration =
               QbftConsensusConfig(
                 validatorSet = setOf(Validator(validatorAddress.fromHexToByteArray())),
-                elFork = ElFork.Prague,
+                fork = ChainFork(ClFork.QBFT_PHASE0, ElFork.Prague),
               ),
           ),
         ),
@@ -176,7 +178,7 @@ class MaruFactory(
             configuration =
               QbftConsensusConfig(
                 validatorSet = setOf(Validator(validatorAddress.fromHexToByteArray())),
-                elFork = ElFork.Prague,
+                fork = ChainFork(ClFork.QBFT_PHASE0, ElFork.Prague),
               ),
           ),
         ),
@@ -196,6 +198,7 @@ class MaruFactory(
     apiConfig: ApiConfig = ApiConfig(port = 0u),
     syncingConfig: SyncingConfig = defaultSyncingConfig,
     allowEmptyBlocks: Boolean = false,
+    enablePayloadValidation: Boolean = true,
   ): MaruConfig {
     val lineaConfig =
       overridingLineaContractClient?.let {
@@ -214,6 +217,7 @@ class MaruFactory(
         ValidatorElNode(
           ethApiEndpoint = ApiEndpointConfig(URI.create(ethereumJsonRpcUrl).toURL()),
           engineApiEndpoint = ApiEndpointConfig(URI.create(engineApiRpc).toURL()),
+          payloadValidationEnabled = enablePayloadValidation,
         ),
       p2p = p2pConfig,
       followers = followers,
@@ -271,6 +275,7 @@ class MaruFactory(
     apiConfig: ApiConfig = ApiConfig(port = 0u),
     syncingConfig: SyncingConfig = defaultSyncingConfig,
     allowEmptyBlocks: Boolean = false,
+    enablePayloadValidation: Boolean = true,
   ): MaruConfig {
     val lineaConfig =
       overridingLineaContractClient?.let {
@@ -289,6 +294,7 @@ class MaruFactory(
         ValidatorElNode(
           ethApiEndpoint = ethereumApiEndpointConfig,
           engineApiEndpoint = engineApiEndpointConfig,
+          payloadValidationEnabled = enablePayloadValidation,
         ),
       p2p = p2pConfig,
       followers = followers,
@@ -316,12 +322,12 @@ class MaruFactory(
       SerDe<SealedBeaconBlock>,
       MetricsFacade,
       BesuMetricsSystem,
-      StatusMessageFactory,
+      StatusManager,
       BeaconChain,
-      ForkIdHashProvider,
-      ForkIdHasher,
+      ForkPeeringManager,
       () -> Boolean,
       P2PState,
+      () -> SyncStatusProvider,
     ) -> P2PNetworkImpl = ::P2PNetworkImpl,
   ): MaruApp =
     MaruAppFactory().create(
@@ -412,12 +418,12 @@ class MaruFactory(
       SerDe<SealedBeaconBlock>,
       MetricsFacade,
       BesuMetricsSystem,
-      StatusMessageFactory,
+      StatusManager,
       BeaconChain,
-      ForkIdHashProvider,
-      ForkIdHasher,
+      ForkPeeringManager,
       () -> Boolean,
       P2PState,
+      () -> SyncStatusProvider,
     ) -> P2PNetworkImpl = ::P2PNetworkImpl,
   ): MaruApp {
     val p2pConfig = buildP2pConfig(p2pPort = p2pPort)
@@ -473,12 +479,12 @@ class MaruFactory(
       SerDe<SealedBeaconBlock>,
       MetricsFacade,
       BesuMetricsSystem,
-      StatusMessageFactory,
+      StatusManager,
       BeaconChain,
-      ForkIdHashProvider,
-      ForkIdHasher,
+      ForkPeeringManager,
       () -> Boolean,
       P2PState,
+      () -> SyncStatusProvider,
     ) -> P2PNetworkImpl = ::P2PNetworkImpl,
   ): MaruApp {
     val p2pConfig =
@@ -541,12 +547,12 @@ class MaruFactory(
       SerDe<SealedBeaconBlock>,
       MetricsFacade,
       BesuMetricsSystem,
-      StatusMessageFactory,
+      StatusManager,
       BeaconChain,
-      ForkIdHashProvider,
-      ForkIdHasher,
+      ForkPeeringManager,
       () -> Boolean,
       P2PState,
+      () -> SyncStatusProvider,
     ) -> P2PNetworkImpl = ::P2PNetworkImpl,
   ): MaruApp {
     val p2pConfig =
@@ -582,10 +588,12 @@ class MaruFactory(
     engineApiRpc: String,
     dataDir: Path,
     validatorPortForStaticPeering: UInt?,
+    followers: FollowersConfig = FollowersConfig(emptyMap()),
     overridingFinalizationProvider: FinalizationProvider? = null,
     overridingLineaContractClient: LineaRollupSmartContractClientReadOnly? = null,
     allowEmptyBlocks: Boolean = false,
     syncingConfig: SyncingConfig = defaultSyncingConfig,
+    enablePayloadValidation: Boolean = true,
   ): MaruApp {
     val p2pConfig = buildP2pConfig(validatorPortForStaticPeering = validatorPortForStaticPeering)
     val config =
@@ -595,8 +603,10 @@ class MaruFactory(
         engineApiRpc = engineApiRpc,
         dataDir = dataDir,
         p2pConfig = p2pConfig,
+        followers = followers,
         overridingLineaContractClient = overridingLineaContractClient,
         syncingConfig = syncingConfig,
+        enablePayloadValidation = enablePayloadValidation,
       )
     return buildApp(
       config,

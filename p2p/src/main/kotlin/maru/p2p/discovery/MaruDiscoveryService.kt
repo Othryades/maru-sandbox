@@ -13,11 +13,12 @@ import java.util.TimerTask
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.timerTask
+import linea.kotlin.encodeHex
 import linea.kotlin.toBigInteger
 import linea.kotlin.toULong
 import maru.config.P2PConfig
-import maru.consensus.ForkIdHashProvider
 import maru.database.P2PState
+import maru.p2p.fork.ForkPeeringManager
 import maru.services.LongRunningService
 import net.consensys.linea.async.toSafeFuture
 import org.apache.logging.log4j.LogManager
@@ -36,13 +37,19 @@ import tech.pegasys.teku.networking.p2p.discovery.discv5.SecretKeyParser
 class MaruDiscoveryService(
   privateKeyBytes: ByteArray,
   private val p2pConfig: P2PConfig,
-  private val forkIdHashProvider: ForkIdHashProvider,
+  private val forkIdHashManager: ForkPeeringManager,
   private val timerFactory: (String, Boolean) -> Timer = { namePrefix, isDaemon -> createTimer(namePrefix, isDaemon) },
   private val p2PState: P2PState,
 ) : LongRunningService {
   init {
     require(p2pConfig.discovery != null) {
       "MaruDiscoveryService is being initialized without the discovery section in the P2P config!"
+    }
+    require(p2pConfig.discovery!!.port != 0u) {
+      "MaruDiscoveryService requires discovery port to be set to a non zero value!"
+    }
+    require(p2pConfig.port != 0u) {
+      "MaruDiscoveryService requires p2p port to be set to a non zero value!"
     }
   }
 
@@ -60,7 +67,7 @@ class MaruDiscoveryService(
       )
 
     internal fun isValidNodeRecord(
-      forkIdHashProvider: ForkIdHashProvider,
+      forkIdHashManager: ForkPeeringManager,
       node: NodeRecord,
     ): Boolean {
       if (node.get(FORK_ID_HASH_FIELD_NAME) == null) {
@@ -72,11 +79,11 @@ class MaruDiscoveryService(
           log.trace("Failed to cast value for the forkId hash to Bytes")
           return false
         }
-      if (forkId != Bytes.wrap(forkIdHashProvider.currentForkIdHash())) {
+      if (!forkIdHashManager.isValidForPeering(forkId.toArray())) {
         log.trace(
-          "Peer {} is on a different chain. Expected: {}, Found: {}",
+          "peer={} is on a different forkId: localForkId={} peerForkId={}",
           node.nodeId,
-          Bytes.wrap(forkIdHashProvider.currentForkIdHash()),
+          forkIdHashManager.currentForkHash().encodeHex(),
           forkId,
         )
         return false
@@ -171,10 +178,10 @@ class MaruDiscoveryService(
     discoverySystem.stop()
   }
 
-  fun updateForkIdHash(forkIdHash: Bytes) {
+  fun updateForkIdHash(forkIdHash: ByteArray) {
     discoverySystem.updateCustomFieldValue(
       FORK_ID_HASH_FIELD_NAME,
-      forkIdHash,
+      Bytes.wrap(forkIdHash),
     )
   }
 
@@ -188,7 +195,7 @@ class MaruDiscoveryService(
   fun getKnownPeers(): Collection<MaruDiscoveryPeer> =
     discoverySystem
       .streamLiveNodes()
-      .filter { isValidNodeRecord(forkIdHashProvider, it) }
+      .filter { isValidNodeRecord(forkIdHashManager, it) }
       .map { node: NodeRecord ->
         convertSafeNodeRecordToDiscoveryPeer(node)
       }.toList()
@@ -216,10 +223,10 @@ class MaruDiscoveryService(
         .secretKey(privateKey)
         .seq(UInt64.valueOf(sequenceNumber.toBigInteger()))
         .address(
-          p2pConfig.ipAddress,
-          p2pConfig.discovery!!.port.toInt(),
-          p2pConfig.port.toInt(),
-        ).customField(FORK_ID_HASH_FIELD_NAME, Bytes.wrap(forkIdHashProvider.currentForkIdHash()))
+          /* ipAddress = */ p2pConfig.discovery!!.advertisedIp ?: p2pConfig.ipAddress,
+          /* udpPort = */ p2pConfig.discovery!!.port.toInt(),
+          /* tcpPort = */ p2pConfig.port.toInt(),
+        ).customField(FORK_ID_HASH_FIELD_NAME, Bytes.wrap(forkIdHashManager.currentForkHash()))
     // TODO: do we want more custom fields to identify version/topics/role/something else?
 
     return nodeRecordBuilder.build()

@@ -9,13 +9,13 @@
 package maru.p2p
 
 import java.util.Optional
-import java.util.concurrent.ScheduledFuture
 import kotlin.time.Duration.Companion.seconds
 import maru.config.P2PConfig
 import maru.p2p.messages.Status
-import maru.p2p.messages.StatusMessageFactory
+import maru.p2p.messages.StatusManager
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -34,12 +34,12 @@ import tech.pegasys.teku.networking.p2p.rpc.RpcStreamController
 class DefaultMaruPeerTest {
   private val delegatePeer = mock<Peer>()
   private val rpcMethods = mock<RpcMethods>()
-  private val statusMessageFactory = mock<StatusMessageFactory>()
+  private val statusManager = mock<StatusManager>()
   private val maruPeer =
     DefaultMaruPeer(
       delegatePeer,
       rpcMethods,
-      statusMessageFactory,
+      statusManager,
       p2pConfig = P2PConfig(ipAddress = "1.1.1.1", port = 9876u),
     )
 
@@ -53,6 +53,7 @@ class DefaultMaruPeerTest {
   fun `updateStatus sets the status`() {
     val status = mock<Status>()
     whenever(delegatePeer.address).thenReturn(mock())
+    whenever(statusManager.isValidForPeering(any())).thenReturn(true)
 
     maruPeer.updateStatus(status)
 
@@ -136,8 +137,9 @@ class DefaultMaruPeerTest {
 
   @Test
   fun `sendRequest delegates to underlying peer`() {
-    val rpcMethod = mock<RpcMethod<RpcRequestHandler, String, RpcResponseHandler<*>>>()
-    val request = "test-request"
+    val rpcMethod =
+      mock<RpcMethod<RpcRequestHandler, RequestMessageAdapter<String, RpcMessageType>, RpcResponseHandler<*>>>()
+    val request = RequestMessageAdapter(MessageData(RpcMessageType.STATUS, Version.V1, "test-request"))
     val responseHandler = mock<RpcResponseHandler<*>>()
     val expectedController = mock<RpcStreamController<RpcRequestHandler>>()
 
@@ -179,7 +181,7 @@ class DefaultMaruPeerTest {
 
   @Test
   fun `sendStatus returns failed future when exception is thrown`() {
-    whenever(statusMessageFactory.createStatusMessage()).thenThrow(RuntimeException("fail"))
+    whenever(statusManager.createStatusMessage()).thenThrow(RuntimeException("fail"))
     whenever(delegatePeer.address).thenReturn(mock())
     val future = maruPeer.sendStatus()
     assertThat(future).isNotNull()
@@ -191,12 +193,12 @@ class DefaultMaruPeerTest {
   fun `updateStatus sets status and cancels scheduled disconnect`() {
     val status = mock<Status>()
     whenever(delegatePeer.address).thenReturn(mock())
+    whenever(statusManager.isValidForPeering(any())).thenReturn(true)
+
     maruPeer.scheduleDisconnectIfStatusNotReceived(1.seconds)
     maruPeer.updateStatus(status)
     assertThat(maruPeer.getStatus()).isEqualTo(status)
-    val field = DefaultMaruPeer::class.java.getDeclaredField("scheduledDisconnect")
-    field.isAccessible = true
-    val value = field.get(maruPeer) as? Optional<ScheduledFuture<*>>
-    assertThat(value!!.get().isCancelled).isTrue()
+    val scheduledDisconnect = maruPeer.scheduledDisconnect
+    assertThat(scheduledDisconnect.get().isCancelled).isTrue()
   }
 }

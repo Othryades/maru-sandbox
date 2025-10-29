@@ -42,11 +42,13 @@ class HopliteFriendlinessTest {
     ip-address = "10.11.12.13"
     static-peers = ["/dns4/bootnode.linea.build/tcp/3322/p2p/16Uiu2HAmFjVuJoKD6sobrxwyJyysM1rgCsfWKzFLwvdB2HKuHwTg"]
     reconnect-delay = "500 ms"
+    peering-fork-mismatch-leeway-time = "10 seconds"
 
     [p2p.discovery]
     port = 3324
     bootnodes = ["enr:-Iu4QHk0YN5IRRnufqsWkbO6Tn0iGTx4H_hnyiIEdXDuhIe0KKrxmaECisyvO40mEmmqKLhz_tdIhx2yFBK8XFKhvxABgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQOgBvD-dv0cX5szOeEsiAMtwxnP1q5CA5toYDrgUyOhV4N0Y3CCJBKDdWRwgiQT"]
     refresh-interval = "30 seconds"
+    advertised-ip = "13.12.11.10"
 
     [p2p.reputation]
     small-change = 1
@@ -64,6 +66,7 @@ class HopliteFriendlinessTest {
     [payload-validator]
     engine-api-endpoint = { endpoint = "http://localhost:8555", jwt-secret-path = "/secret/path" }
     eth-api-endpoint = { endpoint = "http://localhost:8545" }
+    payload-validation-enabled = false
 
     [observability]
     port = 9090
@@ -105,6 +108,7 @@ class HopliteFriendlinessTest {
           "/dns4/bootnode.linea.build/tcp/3322/p2p/16Uiu2HAmFjVuJoKD6sobrxwyJyysM1rgCsfWKzFLwvdB2HKuHwTg",
         ),
       reconnectDelay = 500.milliseconds,
+      peeringForkMismatchLeewayTime = 10.seconds,
       discovery =
         P2PConfig.Discovery(
           port = 3324u,
@@ -113,6 +117,7 @@ class HopliteFriendlinessTest {
               "enr:-Iu4QHk0YN5IRRnufqsWkbO6Tn0iGTx4H_hnyiIEdXDuhIe0KKrxmaECisyvO40mEmmqKLhz_tdIhx2yFBK8XFKhvxABgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQOgBvD-dv0cX5szOeEsiAMtwxnP1q5CA5toYDrgUyOhV4N0Y3CCJBKDdWRwgiQT",
             ),
           refreshInterval = 30.seconds,
+          advertisedIp = "13.12.11.10",
         ),
       reputation =
         P2PConfig.Reputation(
@@ -160,6 +165,7 @@ class HopliteFriendlinessTest {
           endpoint = URI.create("http://localhost:8555").toURL(),
           jwtSecretPath = "/secret/path",
         ),
+      payloadValidationEnabled = false,
     )
   private val follower1 =
     ApiEndpointDto(
@@ -216,23 +222,25 @@ class HopliteFriendlinessTest {
           useUnconditionalRandomDownloadPeer = true,
         ),
     )
+  private val expectedEmptyFollowersBase =
+    MaruConfigDtoToml(
+      protocolTransitionPollingInterval = protocolTransitionPollingInterval,
+      allowEmptyBlocks = false,
+      persistence = persistence,
+      qbft = qbftOptions,
+      p2p = p2pConfig,
+      payloadValidator = payloadValidator,
+      followerEngineApis = null,
+      observability = ObservabilityConfig(port = 9090u),
+      api = ApiConfig(port = 8080u),
+      syncing = syncingConfig,
+    )
 
   @Test
   fun appConfigFileIsParseable() {
     val config = parseConfig<MaruConfigDtoToml>(rawConfigToml)
     assertThat(config).isEqualTo(
-      MaruConfigDtoToml(
-        protocolTransitionPollingInterval = protocolTransitionPollingInterval,
-        allowEmptyBlocks = false,
-        persistence = persistence,
-        qbft = qbftOptions,
-        p2p = p2pConfig,
-        payloadValidator = payloadValidator,
-        followerEngineApis = mapOf("follower1" to follower1, "follower2" to follower2),
-        observability = ObservabilityConfig(port = 9090u),
-        api = ApiConfig(port = 8080u),
-        syncing = syncingConfig,
-      ),
+      expectedEmptyFollowersBase.copy(followerEngineApis = mapOf("follower1" to follower1, "follower2" to follower2)),
     )
   }
 
@@ -240,18 +248,7 @@ class HopliteFriendlinessTest {
   fun supportsEmptyFollowers() {
     val config = parseConfig<MaruConfigDtoToml>(emptyFollowersConfigToml)
     assertThat(config).isEqualTo(
-      MaruConfigDtoToml(
-        protocolTransitionPollingInterval = protocolTransitionPollingInterval,
-        allowEmptyBlocks = false,
-        persistence = persistence,
-        qbft = qbftOptions,
-        p2p = p2pConfig,
-        payloadValidator = payloadValidator,
-        followerEngineApis = null,
-        observability = ObservabilityConfig(port = 9090u),
-        api = ApiConfig(port = 8080u),
-        syncing = syncingConfig,
-      ),
+      expectedEmptyFollowersBase,
     )
   }
 
@@ -289,6 +286,7 @@ class HopliteFriendlinessTest {
           ValidatorElNode(
             engineApiEndpoint = engineApiEndpoint,
             ethApiEndpoint = ethApiEndpoint,
+            payloadValidationEnabled = false,
           ),
         qbft = qbftOptions.toDomain(),
         followers = followersConfig,
@@ -313,6 +311,7 @@ class HopliteFriendlinessTest {
           ValidatorElNode(
             engineApiEndpoint = engineApiEndpoint,
             ethApiEndpoint = ethApiEndpoint,
+            payloadValidationEnabled = false,
           ),
         followers = emptyFollowersConfig,
         observability = ObservabilityConfig(port = 9090u),
@@ -346,6 +345,33 @@ class HopliteFriendlinessTest {
         futureMessagesLimit = 100,
         feeRecipient = "0x0000000000000000000000000000000000000001".decodeHex(),
       ),
+    )
+  }
+
+  @Test
+  fun payloadValidationEnablementFlagIsParseableWhenTrue() {
+    val payloadValidatorToml =
+      """
+      engine-api-endpoint = { endpoint = "http://localhost:8555", jwt-secret-path = "/secret/path" }
+      eth-api-endpoint = { endpoint = "http://localhost:8545" }
+      payload-validation-enabled = true
+      """.trimIndent()
+    val config = parseConfig<PayloadValidatorDto>(payloadValidatorToml)
+    assertThat(config).isEqualTo(
+      payloadValidator.copy(payloadValidationEnabled = true),
+    )
+  }
+
+  @Test
+  fun payloadValidationIsEnabledByDefault() {
+    val payloadValidatorToml =
+      """
+      engine-api-endpoint = { endpoint = "http://localhost:8555", jwt-secret-path = "/secret/path" }
+      eth-api-endpoint = { endpoint = "http://localhost:8545" }
+      """.trimIndent()
+    val config = parseConfig<PayloadValidatorDto>(payloadValidatorToml)
+    assertThat(config).isEqualTo(
+      payloadValidator.copy(payloadValidationEnabled = true),
     )
   }
 
@@ -431,18 +457,7 @@ class HopliteFriendlinessTest {
     val config = parseConfig<MaruConfigDtoToml>(configToml)
 
     assertThat(config).isEqualTo(
-      MaruConfigDtoToml(
-        protocolTransitionPollingInterval = protocolTransitionPollingInterval,
-        allowEmptyBlocks = true,
-        persistence = persistence,
-        qbft = qbftOptions,
-        p2p = p2pConfig,
-        payloadValidator = payloadValidator,
-        followerEngineApis = null,
-        observability = ObservabilityConfig(port = 9090u),
-        api = ApiConfig(port = 8080u),
-        syncing = syncingConfig,
-      ),
+      expectedEmptyFollowersBase.copy(allowEmptyBlocks = true),
     )
 
     assertThat(config.domainFriendly()).isEqualTo(
@@ -455,6 +470,7 @@ class HopliteFriendlinessTest {
           ValidatorElNode(
             engineApiEndpoint = engineApiEndpoint,
             ethApiEndpoint = ethApiEndpoint,
+            payloadValidationEnabled = false,
           ),
         qbft = qbftOptions.toDomain(),
         followers = emptyFollowersConfig,
@@ -503,18 +519,7 @@ class HopliteFriendlinessTest {
     val config = parseConfig<MaruConfigDtoToml>(configToml)
 
     assertThat(config).isEqualTo(
-      MaruConfigDtoToml(
-        linea = expectedTomlConfig,
-        protocolTransitionPollingInterval = protocolTransitionPollingInterval,
-        persistence = persistence,
-        qbft = qbftOptions,
-        p2p = p2pConfig,
-        payloadValidator = payloadValidator,
-        observability = ObservabilityConfig(port = 9090u),
-        api = ApiConfig(port = 8080u),
-        syncing = syncingConfig,
-        followerEngineApis = null,
-      ),
+      expectedEmptyFollowersBase.copy(linea = expectedTomlConfig),
     )
 
     assertThat(config.domainFriendly()).isEqualTo(
@@ -527,6 +532,7 @@ class HopliteFriendlinessTest {
           ValidatorElNode(
             engineApiEndpoint = engineApiEndpoint,
             ethApiEndpoint = ethApiEndpoint,
+            payloadValidationEnabled = false,
           ),
         qbft = qbftOptions.toDomain(),
         followers = emptyFollowersConfig,
@@ -535,5 +541,167 @@ class HopliteFriendlinessTest {
         syncing = syncingConfig,
       ),
     )
+  }
+
+  @Test
+  fun `gossiping config can be overridden`() {
+    val customGossipingConfig =
+      """
+      [p2p.gossiping]
+      d = 12
+      d-low = 10
+      d-high = 16
+      d-lazy = 10
+      fanout-ttl = "120 seconds"
+      gossip-size = 6
+      history = 10
+      heartbeat-interval = "600 milliseconds"
+      seen-ttl = "1200 seconds"
+      flood-publish-max-message-size-threshold = 65536
+      gossip-factor = 0.5
+      consider-peers-as-direct = true
+      """.trimIndent()
+    val configToml = "$emptyFollowersConfigToml\n$customGossipingConfig"
+    val config = parseConfig<MaruConfigDtoToml>(configToml)
+
+    assertThat(config).isEqualTo(
+      expectedEmptyFollowersBase.copy(
+        p2p =
+          p2pConfig.copy(
+            gossiping =
+              P2PConfig.Gossiping(
+                d = 12,
+                dLow = 10,
+                dHigh = 16,
+                dLazy = 10,
+                fanoutTTL = 120.seconds,
+                gossipSize = 6,
+                history = 10,
+                heartbeatInterval = 600.milliseconds,
+                seenTTL = 1200.seconds,
+                floodPublishMaxMessageSizeThreshold = 65536,
+                gossipFactor = 0.5,
+                considerPeersAsDirect = true,
+              ),
+          ),
+      ),
+    )
+  }
+
+  @Test
+  fun `gossiping config can be partially overridden with defaults for unspecified fields`() {
+    val partialGossipingConfig =
+      """
+      [p2p.gossiping]
+      d = 12
+      heartbeat-interval = "600 milliseconds"
+      """.trimIndent()
+    val configToml = "$emptyFollowersConfigToml\n$partialGossipingConfig"
+    val config = parseConfig<MaruConfigDtoToml>(configToml)
+
+    assertThat(config).isEqualTo(
+      expectedEmptyFollowersBase.copy(
+        p2p =
+          p2pConfig.copy(
+            gossiping =
+              P2PConfig.Gossiping(
+                d = 12,
+                dLow = 6, // default
+                dHigh = 24, // default (d * 2)
+                dLazy = 6, // default
+                fanoutTTL = 60.seconds, // default
+                gossipSize = 3, // default
+                history = 6, // default
+                heartbeatInterval = 600.milliseconds,
+                seenTTL = 700.milliseconds * 1115, // default
+                floodPublishMaxMessageSizeThreshold = 16384, // default
+                gossipFactor = 0.25, // default
+                considerPeersAsDirect = false, // default
+              ),
+          ),
+      ),
+    )
+  }
+
+  @Test
+  fun `gossiping config is parseable as standalone`() {
+    val gossipingToml =
+      """
+      d = 10
+      d-low = 8
+      d-high = 14
+      d-lazy = 8
+      fanout-ttl = "90 seconds"
+      gossip-size = 5
+      history = 8
+      heartbeat-interval = "500 milliseconds"
+      seen-ttl = "1000 seconds"
+      flood-publish-max-message-size-threshold = 32768
+      gossip-factor = 0.3
+      consider-peers-as-direct = true
+      """.trimIndent()
+    val config = parseConfig<P2PConfig.Gossiping>(gossipingToml)
+
+    assertThat(config).isEqualTo(
+      P2PConfig.Gossiping(
+        d = 10,
+        dLow = 8,
+        dHigh = 14,
+        dLazy = 8,
+        fanoutTTL = 90.seconds,
+        gossipSize = 5,
+        history = 8,
+        heartbeatInterval = 500.milliseconds,
+        seenTTL = 1000.seconds,
+        floodPublishMaxMessageSizeThreshold = 32768,
+        gossipFactor = 0.3,
+        considerPeersAsDirect = true,
+      ),
+    )
+  }
+
+  @Test
+  fun `p2p discovery with invalid advertisedIp format should fail`() {
+    val discoveryConfigToml =
+      """
+      port = 9000
+      refresh-interval = "30 seconds"
+      advertised-ip = "127.0.256.1"
+      """.trimIndent()
+
+    assertThatThrownBy {
+      parseConfig<P2PConfig.Discovery>(discoveryConfigToml)
+    }.isInstanceOf(ConfigException::class.java)
+      .hasMessageContaining("UnknownHostException")
+      .hasMessageContaining("127.0.256.1")
+  }
+
+  @Test
+  fun `p2p config with invalid ipAddress format should fail`() {
+    val p2pConfigToml =
+      """
+      ip-address = "127.O.0H.1"
+      """.trimIndent()
+
+    assertThatThrownBy {
+      parseConfig<P2PConfig>(p2pConfigToml)
+    }.isInstanceOf(ConfigException::class.java)
+      .hasMessageContaining("UnknownHostException")
+      .hasMessageContaining("127.O.0H.1")
+  }
+
+  @Test
+  fun `p2p config with valid dns instead of IP format should fail`() {
+    val p2pConfigToml =
+      """
+      ip-address = "test.com"
+      """.trimIndent()
+
+    assertThatThrownBy {
+      parseConfig<P2PConfig>(p2pConfigToml)
+    }.isInstanceOf(ConfigException::class.java)
+      .hasMessageContaining("IllegalArgumentException")
+      .hasMessageContaining("Invalid IP address format")
+      .hasMessageContaining("test.com")
   }
 }

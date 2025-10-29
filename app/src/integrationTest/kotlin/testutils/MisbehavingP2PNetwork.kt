@@ -10,17 +10,17 @@ package testutils
 
 import kotlin.time.Duration
 import maru.config.P2PConfig
-import maru.consensus.ForkIdHashProvider
-import maru.consensus.ForkIdHasher
 import maru.core.SealedBeaconBlock
 import maru.database.BeaconChain
 import maru.database.P2PState
 import maru.p2p.P2PNetworkImpl
 import maru.p2p.RpcMethods
+import maru.p2p.fork.ForkPeeringManager
 import maru.p2p.messages.BeaconBlocksByRangeRequest
 import maru.p2p.messages.BlockRetrievalStrategy
-import maru.p2p.messages.StatusMessageFactory
+import maru.p2p.messages.StatusManager
 import maru.serialization.SerDe
+import maru.syncing.SyncStatusProvider
 import net.consensys.linea.metrics.MetricsFacade
 import org.hyperledger.besu.plugin.services.MetricsSystem as BesuMetricsSystem
 
@@ -31,12 +31,12 @@ class MisbehavingP2PNetwork(
   serDe: SerDe<SealedBeaconBlock>,
   metricsFacade: MetricsFacade,
   metricsSystem: BesuMetricsSystem,
-  smf: StatusMessageFactory,
+  statusManager: StatusManager,
   chain: BeaconChain,
-  forkIdHashProvider: ForkIdHashProvider,
-  forkIdHasher: ForkIdHasher,
+  forkIdHashManager: ForkPeeringManager,
   isBlockImportEnabledProvider: () -> Boolean,
   p2pState: P2PState,
+  syncStatusProviderProvider: () -> SyncStatusProvider,
   blockRetrievalStrategy: BlockRetrievalStrategy,
 ) {
   val p2pNetwork: P2PNetworkImpl =
@@ -47,12 +47,12 @@ class MisbehavingP2PNetwork(
       serDe = serDe,
       metricsFacade = metricsFacade,
       metricsSystem = metricsSystem,
-      statusMessageFactory = smf,
+      statusManager = statusManager,
       beaconChain = chain,
-      forkIdHashProvider = forkIdHashProvider,
-      forkIdHasher = forkIdHasher,
+      forkIdHashManager = forkIdHashManager,
       isBlockImportEnabledProvider = isBlockImportEnabledProvider,
       p2PState = p2pState,
+      syncStatusProviderProvider = syncStatusProviderProvider,
       rpcMethodsFactory = { statusMessageFactory, lineaRpcProtocolIdGenerator, peerLookup, beaconChain ->
         RpcMethods(statusMessageFactory, lineaRpcProtocolIdGenerator, peerLookup, beaconChain, blockRetrievalStrategy)
       },

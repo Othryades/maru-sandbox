@@ -12,13 +12,13 @@ import java.time.Clock
 import java.util.concurrent.Executors
 import kotlin.time.Duration.Companion.seconds
 import maru.config.QbftConfig
-import maru.config.consensus.qbft.QbftConsensusConfig
 import maru.consensus.ForkSpec
 import maru.consensus.ForksSchedule
 import maru.consensus.NextBlockTimestampProvider
 import maru.consensus.PrevRandaoProvider
 import maru.consensus.PrevRandaoProviderImpl
 import maru.consensus.ProtocolFactory
+import maru.consensus.QbftConsensusConfig
 import maru.consensus.StaticValidatorProvider
 import maru.consensus.blockimport.BlockBuildingBeaconBlockImporter
 import maru.consensus.blockimport.SealedBeaconBlockImporter
@@ -85,6 +85,7 @@ class QbftValidatorFactory(
   private val p2PNetwork: P2PNetwork,
   private val allowEmptyBlocks: Boolean,
   private val forksSchedule: ForksSchedule,
+  private val payloadValidationEnabled: Boolean,
 ) : ProtocolFactory {
   override fun create(forkSpec: ForkSpec): Protocol {
     val protocolConfig = forkSpec.configuration as QbftConsensusConfig
@@ -179,7 +180,7 @@ class QbftValidatorFactory(
         beaconChain = beaconChain,
         proposerSelector = proposerSelector,
         stateTransition = stateTransition,
-        executionLayerManager = executionLayerManager,
+        executionLayerManager = if (payloadValidationEnabled) executionLayerManager else null,
         allowEmptyBlocks = allowEmptyBlocks,
       )
     val protocolSchedule =

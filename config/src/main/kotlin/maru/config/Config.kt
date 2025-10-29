@@ -11,6 +11,7 @@ package maru.config
 import java.net.InetAddress
 import java.net.URL
 import java.nio.file.Path
+import kotlin.math.max
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
@@ -43,13 +44,15 @@ data class P2PConfig(
   val staticPeers: List<String> = emptyList(),
   val reconnectDelay: Duration = 5.seconds,
   val maxPeers: Int = 25,
+  val maxUnsyncedPeers: Int = max(1, maxPeers / 10),
   val discovery: Discovery? = null,
   val statusUpdate: StatusUpdate = StatusUpdate(),
   val reputation: Reputation = Reputation(),
+  val peeringForkMismatchLeewayTime: Duration = 20.seconds,
+  val gossiping: Gossiping = Gossiping(),
 ) {
   init {
-    // just a sanity check to ensure the IP address is valid
-    InetAddress.getByName(ipAddress)
+    validateIpAddress(ipAddress)
     require(reputation.smallChange > 0) {
       "smallChange must be a positive number"
     }
@@ -62,7 +65,27 @@ data class P2PConfig(
     val port: UInt = 9000u,
     val bootnodes: List<String> = emptyList(),
     val refreshInterval: Duration,
-  )
+    val advertisedIp: String? = null,
+  ) {
+    init {
+      advertisedIp?.let { validateIpAddress(it) }
+    }
+  }
+
+  companion object {
+    private fun validateIpAddress(ip: String) {
+      require(ip.isNotBlank()) {
+        "IP address must not be blank"
+      }
+      // InetAddress.getByName accepts both IP addresses and hostnames.
+      // We need to ensure it's actually an IP address by checking that
+      // the parsed address matches the input (no DNS resolution occurred)
+      val address = InetAddress.getByName(ip)
+      require(address.hostAddress == ip) {
+        "Invalid IP address format: $ip"
+      }
+    }
+  }
 
   data class StatusUpdate(
     val refreshInterval: Duration = 30.seconds,
@@ -79,11 +102,31 @@ data class P2PConfig(
     val cooldownPeriod: Duration = 2.minutes,
     val banPeriod: Duration = 1.hours,
   )
+
+  /**
+   * Gossip options wrapping Teku's tech.pegasys.teku.networking.p2p.gossip.config.GossipConfig
+   * https://github.com/ethereum/consensus-specs/blob/v0.11.1/specs/phase0/p2p-interface.md#the-gossip-domain-gossipsub
+   */
+  data class Gossiping(
+    val d: Int = 8,
+    val dLow: Int = 6,
+    val dHigh: Int = d * 2,
+    val dLazy: Int = 6,
+    val fanoutTTL: Duration = 60.seconds,
+    val gossipSize: Int = 3,
+    val history: Int = 6,
+    val heartbeatInterval: Duration = 700.milliseconds,
+    val seenTTL: Duration = 700.milliseconds * 1115,
+    val floodPublishMaxMessageSizeThreshold: Int = 1 shl 14, // 16KiB
+    val gossipFactor: Double = 0.25,
+    val considerPeersAsDirect: Boolean = false,
+  )
 }
 
 data class ValidatorElNode(
   val ethApiEndpoint: ApiEndpointConfig,
   val engineApiEndpoint: ApiEndpointConfig,
+  val payloadValidationEnabled: Boolean,
 )
 
 data class QbftConfig(

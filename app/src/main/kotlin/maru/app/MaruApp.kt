@@ -12,16 +12,20 @@ import io.vertx.core.Vertx
 import java.time.Clock
 import maru.api.ApiServer
 import maru.config.MaruConfig
+import maru.consensus.DifficultyAwareQbftConfig
 import maru.consensus.ForkSpec
 import maru.consensus.ForksSchedule
 import maru.consensus.NextBlockTimestampProviderImpl
 import maru.consensus.OmniProtocolFactory
 import maru.consensus.ProtocolStarter
+import maru.consensus.QbftConsensusConfig
 import maru.consensus.qbft.DifficultyAwareQbftFactory
 import maru.consensus.state.FinalizationProvider
 import maru.core.Protocol
+import maru.core.Validator
 import maru.crypto.Crypto
 import maru.database.BeaconChain
+import maru.extensions.encodeHex
 import maru.finalization.LineaFinalizationProvider
 import maru.metrics.MaruMetricsCategory
 import maru.p2p.P2PNetwork
@@ -56,9 +60,16 @@ class MaruApp(
 ) : AutoCloseable {
   private val log: Logger = LogManager.getLogger(this.javaClass)
 
+  private fun getPrivateKeyWithoutPrefix() = Crypto.privateKeyBytesWithoutPrefix(privateKeyProvider())
+
   init {
     if (config.qbft == null) {
-      log.info("Qbft options are not defined. Maru is running in follower-only node")
+      log.info("Qbft options are not defined. nodeRole=follower")
+    } else {
+      val localValidator = Crypto.privateKeyToValidator(getPrivateKeyWithoutPrefix())
+      log.info("Qbft options are defined. nodeRole=validator with address={}", localValidator.address.encodeHex())
+      // TODO: This may be not needed when we use dynamic validator set from a smart contract
+      warnIfValidatorIsNotInTheGenesis(localValidator)
     }
 
     metricsFacade.createGauge(
@@ -89,7 +100,14 @@ class MaruApp(
       clock = clock,
       forksSchedule = beaconGenesisConfig,
     )
-  private val protocolStarter = createProtocolStarter(config, beaconGenesisConfig, clock, beaconChain)
+  private val protocolStarter =
+    createProtocolStarter(
+      config = config,
+      beaconGenesisConfig = beaconGenesisConfig,
+      clock = clock,
+      beaconChain = beaconChain,
+      privateKeyWithoutPrefix = getPrivateKeyWithoutPrefix(),
+    )
 
   fun start() {
     if (finalizationProvider is LineaFinalizationProvider) {
@@ -97,7 +115,7 @@ class MaruApp(
     }
     start("P2P Network") { p2pNetwork.start().get() }
     start("Sync Service", syncControllerManager::start)
-    start("beacon Api", apiServer::start)
+    start("Beacon Api", apiServer::start)
     // observability shall be the last to start because of liveness/readiness probe
     start("Observability Server") {
       ObservabilityServer(
@@ -114,7 +132,7 @@ class MaruApp(
       stop("Finalization Provider", finalizationProvider::stop)
     }
     stop("Beacon API", apiServer::stop)
-    stop("Protocol", protocolStarter::stop)
+    stop("Protocol", protocolStarter::pause)
     stop("vertx verticles") {
       vertx.deploymentIDs().forEach {
         vertx.undeploy(it).get()
@@ -131,6 +149,7 @@ class MaruApp(
     vertx.close()
     // close db last, otherwise other components may fail trying to save data
     beaconChain.close()
+    protocolStarter.close()
   }
 
   private fun start(
@@ -138,6 +157,7 @@ class MaruApp(
     action: () -> Unit,
   ) {
     runCatching(action)
+      .onSuccess { log.info("{} started!", serviceName) }
       .onFailure { log.error("Failed to start {}, errorMessage={}", serviceName, it.message, it) }
       .getOrThrow()
   }
@@ -158,12 +178,13 @@ class MaruApp(
     beaconGenesisConfig: ForksSchedule,
     clock: Clock,
     beaconChain: BeaconChain,
+    privateKeyWithoutPrefix: ByteArray,
   ): Protocol {
     val qbftFactory =
       if (config.qbft != null) {
         QbftProtocolValidatorFactory(
           qbftOptions = config.qbft!!,
-          privateKeyBytes = Crypto.privateKeyBytesWithoutPrefix(privateKeyProvider()),
+          privateKeyBytes = privateKeyWithoutPrefix,
           validatorELNodeEngineApiWeb3JClient = validatorELNodeEngineApiWeb3JClient,
           followerELNodeEngineApiWeb3JClients = followerELNodeEngineApiWeb3JClients,
           metricsSystem = metricsSystem,
@@ -176,6 +197,7 @@ class MaruApp(
           allowEmptyBlocks = config.allowEmptyBlocks,
           syncStatusProvider = syncStatusProvider,
           forksSchedule = beaconGenesisConfig,
+          payloadValidationEnabled = config.validatorElNode.payloadValidationEnabled,
         )
       } else {
         QbftFollowerFactory(
@@ -186,6 +208,7 @@ class MaruApp(
           metricsFacade = metricsFacade,
           allowEmptyBlocks = config.allowEmptyBlocks,
           finalizationStateProvider = finalizationProvider,
+          payloadValidationEnabled = config.validatorElNode.payloadValidationEnabled,
         )
       }
     val forkTransitionSubscriptionManager = InOrderFanoutSubscriptionManager<ForkSpec>()
@@ -207,10 +230,27 @@ class MaruApp(
         syncStatusProvider = syncStatusProvider,
         forkTransitionCheckInterval = config.protocolTransitionPollingInterval,
         forkTransitionNotifier = forkTransitionSubscriptionManager,
+        clock = clock,
       )
 
     return protocolStarter
   }
 
-  fun p2pNetwork(): P2PNetwork = p2pNetwork
+  private fun warnIfValidatorIsNotInTheGenesis(localValidator: Validator) {
+    val validatorsFromAllForks: Set<Validator> =
+      beaconGenesisConfig.forks
+        .flatMap<ForkSpec, Validator> {
+          when (val configuration = it.configuration) {
+            is DifficultyAwareQbftConfig -> configuration.postTtdConfig.validatorSet
+            is QbftConsensusConfig -> configuration.validatorSet
+            else -> throw IllegalArgumentException("")
+          }
+        }.toSet()
+    if (!validatorsFromAllForks.contains(localValidator)) {
+      log.warn(
+        "localValidator={} isn't found in any of validatorSet-s in any of the Forks in the Genesis file!",
+        localValidator,
+      )
+    }
+  }
 }

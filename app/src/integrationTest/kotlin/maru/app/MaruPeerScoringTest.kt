@@ -9,7 +9,6 @@
 package maru.app
 
 import java.lang.Thread.sleep
-import java.net.ServerSocket
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
@@ -22,11 +21,21 @@ import kotlinx.coroutines.launch
 import linea.domain.BlockParameter
 import linea.ethapi.EthApiClient
 import linea.web3j.ethapi.createEthApiClient
+import maru.config.P2PConfig
+import maru.core.SealedBeaconBlock
+import maru.database.BeaconChain
+import maru.database.P2PState
+import maru.p2p.fork.ForkPeeringManager
 import maru.p2p.messages.BlockRetrievalStrategy
 import maru.p2p.messages.DefaultBlockRetrievalStrategy
+import maru.p2p.messages.StatusManager
+import maru.serialization.SerDe
+import maru.syncing.SyncStatusProvider
+import net.consensys.linea.metrics.MetricsFacade
 import org.apache.logging.log4j.LogManager
 import org.assertj.core.api.Assertions.assertThat
 import org.awaitility.kotlin.await
+import org.hyperledger.besu.plugin.services.MetricsSystem
 import org.hyperledger.besu.tests.acceptance.dsl.blockchain.Amount
 import org.hyperledger.besu.tests.acceptance.dsl.condition.net.NetConditions
 import org.hyperledger.besu.tests.acceptance.dsl.node.ThreadBesuNodeRunner
@@ -38,6 +47,7 @@ import org.junit.jupiter.api.Test
 import testutils.FourEmptyResponsesStrategy
 import testutils.MisbehavingP2PNetwork
 import testutils.PeeringNodeNetworkStack
+import testutils.TestUtils.findFreePort
 import testutils.TimeOutResponsesStrategy
 import testutils.besu.BesuFactory
 import testutils.besu.BesuTransactionsHelper
@@ -185,18 +195,18 @@ class MaruPeerScoringTest {
         discoveryPort = udpPort,
         cooldownPeriod = validatorCooldownPeriod,
         p2pNetworkFactory = {
-          privateKeyBytes,
-          p2pConfig,
-          chainId,
-          serDe,
-          metricsFacade,
-          metricsSystem,
-          smf,
-          chain,
-          forkIdHashProvider,
-          forkIdHasher,
-          isBlockImportEnabledProvider,
-          p2pState,
+          privateKeyBytes: ByteArray,
+          p2pConfig: P2PConfig,
+          chainId: UInt,
+          serDe: SerDe<SealedBeaconBlock>,
+          metricsFacade: MetricsFacade,
+          metricsSystem: MetricsSystem,
+          statusManager: StatusManager,
+          chain: BeaconChain,
+          forkIdHashManager: ForkPeeringManager,
+          isBlockImportEnabledProvider: () -> Boolean,
+          p2pState: P2PState,
+          syncStatusProviderProvider: () -> SyncStatusProvider,
           ->
           MisbehavingP2PNetwork(
             privateKeyBytes = privateKeyBytes,
@@ -205,12 +215,12 @@ class MaruPeerScoringTest {
             serDe = serDe,
             metricsFacade = metricsFacade,
             metricsSystem = metricsSystem,
-            smf = smf,
+            statusManager = statusManager,
             chain = chain,
-            forkIdHashProvider = forkIdHashProvider,
-            forkIdHasher = forkIdHasher,
+            forkIdHashManager = forkIdHashManager,
             isBlockImportEnabledProvider = isBlockImportEnabledProvider,
             p2pState = p2pState,
+            syncStatusProviderProvider = syncStatusProviderProvider,
             blockRetrievalStrategy = blockRetrievalStrategy,
           ).p2pNetwork
         },
@@ -314,14 +324,4 @@ class MaruPeerScoringTest {
     }
     return MaruNodeSetup(validatorMaruApp = validatorMaruApp, followerMaruApp = followerMaruApp, job = job)
   }
-
-  private fun findFreePort(): UInt =
-    runCatching {
-      ServerSocket(0).use { socket ->
-        socket.reuseAddress = true
-        socket.localPort.toUInt()
-      }
-    }.getOrElse {
-      throw IllegalStateException("Could not find a free port", it)
-    }
 }

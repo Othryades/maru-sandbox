@@ -6,18 +6,26 @@
  *
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
-package maru.config.consensus.qbft
+package maru.consensus
 
-import maru.config.consensus.ElFork
-import maru.consensus.ConsensusConfig
 import maru.core.Validator
 
 data class QbftConsensusConfig(
   val validatorSet: Set<Validator>,
-  val elFork: ElFork,
-) : ConsensusConfig
+  override val fork: ChainFork,
+) : ConsensusConfig {
+  val elFork: ElFork = fork.elFork
+
+  override fun toString(): String =
+    "QbftConsensusConfig(fork=${fork.clFork}/${fork.elFork}, validatorSet=$validatorSet)"
+}
 
 data class DifficultyAwareQbftConfig(
   val postTtdConfig: QbftConsensusConfig,
   val terminalTotalDifficulty: ULong,
-) : ConsensusConfig
+) : ConsensusConfig {
+  override val fork: ChainFork = postTtdConfig.fork
+
+  override fun toString(): String =
+    "DifficultyAwareQbftConfig(terminalTotalDifficulty=$terminalTotalDifficulty, postTtdConfig=$postTtdConfig)"
+}

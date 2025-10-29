@@ -11,15 +11,13 @@ package maru.p2p
 import io.libp2p.core.PeerId
 import io.libp2p.core.crypto.unmarshalPrivateKey
 import java.util.Optional
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import kotlin.jvm.optionals.getOrElse
 import kotlin.jvm.optionals.getOrNull
 import maru.config.P2PConfig
-import maru.consensus.ForkId
-import maru.consensus.ForkIdHashProvider
-import maru.consensus.ForkIdHasher
 import maru.consensus.ForkSpec
 import maru.core.SealedBeaconBlock
 import maru.crypto.Crypto.privateKeyBytesWithoutPrefix
@@ -28,9 +26,11 @@ import maru.database.P2PState
 import maru.metrics.MaruMetricsCategory
 import maru.p2p.NetworkHelper.listIpsV4
 import maru.p2p.discovery.MaruDiscoveryService
-import maru.p2p.messages.StatusMessageFactory
+import maru.p2p.fork.ForkPeeringManager
+import maru.p2p.messages.StatusManager
 import maru.p2p.topics.TopicHandlerWithInOrderDelivering
 import maru.serialization.SerDe
+import maru.syncing.SyncStatusProvider
 import net.consensys.linea.metrics.MetricsFacade
 import net.consensys.linea.metrics.Tag
 import org.apache.logging.log4j.LogManager
@@ -56,16 +56,16 @@ class P2PNetworkImpl(
   private val chainId: UInt,
   private val serDe: SerDe<SealedBeaconBlock>,
   private val metricsFacade: MetricsFacade,
-  private val metricsSystem: BesuMetricsSystem,
-  private val statusMessageFactory: StatusMessageFactory,
+  metricsSystem: BesuMetricsSystem,
+  private val statusManager: StatusManager,
   private val beaconChain: BeaconChain,
-  private val forkIdHashProvider: ForkIdHashProvider,
-  private val forkIdHasher: ForkIdHasher,
+  private val forkIdHashManager: ForkPeeringManager,
   isBlockImportEnabledProvider: () -> Boolean,
   private val p2PState: P2PState,
+  private val syncStatusProviderProvider: () -> SyncStatusProvider,
   // for testing:
   private val rpcMethodsFactory: (
-    StatusMessageFactory,
+    StatusManager,
     LineaRpcProtocolIdGenerator,
     () -> PeerLookup,
     BeaconChain,
@@ -111,18 +111,19 @@ class P2PNetworkImpl(
     val reputationManager =
       MaruReputationManager(besuMetricsSystem, SystemTimeProvider(), this::isStaticPeer, p2pConfig.reputation)
 
-    val rpcMethods = rpcMethodsFactory(statusMessageFactory, rpcIdGenerator, { maruPeerManager }, beaconChain)
+    val rpcMethods = rpcMethodsFactory(statusManager, rpcIdGenerator, { maruPeerManager }, beaconChain)
     maruPeerManager =
       MaruPeerManager(
         maruPeerFactory =
           DefaultMaruPeerFactory(
             rpcMethods = rpcMethods,
-            statusMessageFactory = statusMessageFactory,
+            statusManager = statusManager,
             p2pConfig = p2pConfig,
           ),
         p2pConfig = p2pConfig,
         reputationManager = reputationManager,
         isStaticPeer = this::isStaticPeer,
+        syncStatusProviderProvider = syncStatusProviderProvider,
       )
 
     return Libp2pNetworkFactory(LINEA_DOMAIN).build(
@@ -136,23 +137,18 @@ class P2PNetworkImpl(
       metricsSystem = besuMetricsSystem,
       asyncRunner = asyncRunner,
       reputationManager = reputationManager,
+      gossipingConfig = p2pConfig.gossiping,
     )
   }
 
   private val builtNetwork: TekuLibP2PNetwork = buildP2PNetwork(privateKeyBytes, p2pConfig, metricsSystem)
   internal val p2pNetwork = builtNetwork.p2PNetwork
-  private val discoveryService: MaruDiscoveryService? =
-    p2pConfig.discovery?.let {
-      MaruDiscoveryService(
-        privateKeyBytes = privateKeyBytesWithoutPrefix(privateKeyBytes),
-        p2pConfig = p2pConfig,
-        forkIdHashProvider = forkIdHashProvider,
-        p2PState = p2PState,
-      )
-    }
+  private var discoveryService: MaruDiscoveryService? = null
 
   override val localNodeRecord: NodeRecord?
     get() = discoveryService?.getLocalNodeRecord()
+  override val enr: String?
+    get() = localNodeRecord?.asEnr()
 
   // TODO: We need to call the updateForkId method on the discovery service when the forkId changes internal
   private val peerLookup = builtNetwork.peerLookup
@@ -162,12 +158,11 @@ class P2PNetworkImpl(
     )
   private val delayedExecutor =
     SafeFuture.delayedExecutor(p2pConfig.reconnectDelay.inWholeMilliseconds, TimeUnit.MILLISECONDS, executor)
-  private val staticPeerMap = mutableMapOf<NodeId, MultiaddrPeerAddress>()
+  private val staticPeerMap = ConcurrentHashMap<NodeId, MultiaddrPeerAddress>()
 
   override val nodeId: String = p2pNetwork.nodeId.toBase58()
   override val discoveryAddresses: List<String>
     get() = p2pNetwork.discoveryAddresses.getOrElse { emptyList() }
-  override val enr: String? = discoveryService?.getLocalNodeRecord()?.asEnr()
   override val nodeAddresses: List<String> = p2pNetwork.nodeAddresses
 
   private fun logEnr(nodeRecord: NodeRecord) {
@@ -192,6 +187,15 @@ class P2PNetworkImpl(
             .createPeerAddress(peer)
             ?.let { address -> addStaticPeer(address as MultiaddrPeerAddress) }
         }
+        discoveryService =
+          p2pConfig.discovery?.let {
+            MaruDiscoveryService(
+              privateKeyBytes = privateKeyBytesWithoutPrefix(privateKeyBytes),
+              p2pConfig = if (p2pConfig.port == 0u) p2pConfig.copy(port = port) else p2pConfig,
+              forkIdHashManager = forkIdHashManager,
+              p2PState = p2PState,
+            )
+          }
         discoveryService?.start()
         maruPeerManager.start(discoveryService, p2pNetwork)
         metricsFacade.createGauge(
@@ -212,11 +216,11 @@ class P2PNetworkImpl(
             privateKeyBytes = privateKeyBytes,
             seq = 0,
             ipv4 = it,
-            ipv4UdpPort = p2pConfig.discovery?.port?.toInt() ?: p2pConfig.port.toInt(),
-            ipv4TcpPort = p2pConfig.port.toInt(),
+            ipv4UdpPort = p2pConfig.discovery?.port?.toInt() ?: port.toInt(),
+            ipv4TcpPort = port.toInt(),
           )
         }
-    return enrs + listOfNotNull(discoveryService?.getLocalNodeRecord())
+    return enrs + listOfNotNull(localNodeRecord)
   }
 
   override fun stop(): SafeFuture<Unit> {
@@ -245,7 +249,7 @@ class P2PNetworkImpl(
       GossipMessageType.QBFT -> SafeFuture.completedFuture(Unit) // TODO: Add QBFT messages support later
       GossipMessageType.BEACON_BLOCK -> {
         require(message.payload is SealedBeaconBlock)
-        val serializedSealedBeaconBlock = Bytes.wrap(serDe.serialize(message.payload))
+        val serializedSealedBeaconBlock = Bytes.wrap(serDe.serialize(message.payload as SealedBeaconBlock))
         p2pNetwork.gossip(
           topicIdGenerator.id(message.type.name, message.version, Encoding.RLP_SNAPPY),
           serializedSealedBeaconBlock,
@@ -305,14 +309,15 @@ class P2PNetworkImpl(
       .whenComplete { peer: Peer?, t: Throwable? ->
         if (t != null) {
           if (t.cause is PeerAlreadyConnectedException) {
-            log.trace("Already connected to peer={}. Error={}", peerAddress, t.message)
+            log.trace("Already connected to peer={}. errorMessage={}", peerAddress, t.message)
             reconnectWhenDisconnected(peer!!, peerAddress)
           } else {
-            log.trace(
-              "Failed to connect to static peer={}, retrying after {} ms. Error={}",
+            log.debug(
+              "failed to connect to static peer={} retrying after {}. errorMessage={}",
               peerAddress,
               p2pConfig.reconnectDelay,
               t.message,
+              t,
             )
             if (t.cause?.message != "Transport is closed") {
               SafeFuture
@@ -349,6 +354,9 @@ class P2PNetworkImpl(
 
   override val peerCount: Int
     get() = maruPeerManager.peerCount
+
+  internal fun isConnected(peer: String): Boolean =
+    maruPeerManager.getPeer(LibP2PNodeId(PeerId.fromBase58(peer))) != null
 
   internal fun dropPeer(
     peer: String,
@@ -387,15 +395,6 @@ class P2PNetworkImpl(
   }
 
   override fun handleForkTransition(forkSpec: ForkSpec) {
-    val forkId =
-      ForkId(
-        chainId = chainId,
-        forkSpec = forkSpec,
-        genesisRootHash =
-          beaconChain.getBeaconState(0u)?.beaconBlockHeader?.hash
-            ?: throw IllegalStateException("Genesis state not found"),
-      )
-    val newForkIdHash = forkIdHasher.hash(forkId)
-    discoveryService?.updateForkIdHash(Bytes.wrap(newForkIdHash))
+    discoveryService?.updateForkIdHash(forkIdHashManager.currentForkHash())
   }
 }
