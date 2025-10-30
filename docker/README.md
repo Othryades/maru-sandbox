@@ -51,10 +51,21 @@ node test-final-poc.js
 ```
 
 **Tests:**
-- Block production continuity
-- Rollup-Boost proxy functionality
-- Transaction submission pathway
-- JSON-RPC method forwarding
+- Block production continuity (validates 100+ blocks)
+- Rollup-Boost proxy functionality (sub-30ms latency)
+- Transaction submission pathway (Maru → Rollup-Boost → Besu)
+- JSON-RPC method forwarding (all methods proxied correctly)
+
+### Flashblocks WebSocket Client
+```bash
+node test-flashblocks-websocket.js
+```
+
+**Demonstrates:**
+- Connects to Base Sepolia Flashblocks WebSocket
+- Receives real-time Flashblock stream (~200ms intervals)
+- Displays Flashblock format (binary SSZ encoding)
+- Shows what Besu should generate for Linea Flashblocks
 
 ### Integration Test
 ```bash
