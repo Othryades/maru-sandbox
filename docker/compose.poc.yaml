@@ -15,12 +15,12 @@ services:
       - ./initialization/:/initialization:rw
     networks: [linea]
 
-  sequencer:
+  besu:
     depends_on:
       initialization:
         condition: service_completed_successfully
-    image: hyperledger/besu:25.8.0
-    container_name: sequencer
+    image: hyperledger/besu:25.10.0
+    container_name: besu
     environment:
       LOG4J_CONFIGURATION_FILE: /var/lib/besu/log4j.xml
       JAVA_OPTS: -Xmx512m -XX:+UnlockExperimentalVMOptions -XX:+UseZGC
@@ -36,69 +36,46 @@ services:
       - ./sequencer/config.toml:/var/lib/besu/config.toml:ro
       - ./sequencer/log4j.xml:/var/lib/besu/log4j.xml:ro
       - ./sequencer/key:/var/lib/besu/key:ro
+      - ./sequencer/data/:/opt/besu/data
       - ./initialization/:/initialization/:ro
     ports:
-      - "8545:8545" # JSON-RPC
-      - "8550:8550" # Engine API
-      - "30303:30303" # P2P
+      - "9545:8545" # JSON-RPC
+      - "9550:8550" # Engine API
+      - "9002:9001" # Builder API
+      - "9303:30303" # P2P
     healthcheck:
-      test: ["CMD-SHELL", 'bash -c "[ -f /tmp/pid ]"']
-      interval: 1s
-      timeout: 1s
-      retries: 120
-    networks: [linea]
-
-  op-rbuilder:
-    image: flashbots-op-rbuilder:latest
-    container_name: op-rbuilder
-    depends_on:
-      sequencer:
-        condition: service_healthy
-    environment:
-      - RUST_LOG=info
-    entrypoint: ["/app/rbuilder"]
-    command:
-      - "node"
-      - "--chain"
-      - "/chain/chain-config.json"
-      - "--http"
-      - "--http.addr=0.0.0.0"
-      - "--http.port=8545"
-      - "--authrpc.addr=0.0.0.0"
-      - "--authrpc.port=8551"
-      - "--authrpc.jwtsecret=/jwt/jwt.hex"
-      - "--metrics"
-    volumes:
-      - ./jwt:/jwt:ro
-      - ./op-chain-config.json:/chain/chain-config.json:ro
-    ports:
-      - "8547:8545" # JSON-RPC for op-rbuilder
-      - "8552:8551" # Engine API for op-rbuilder
+      test: ["CMD-SHELL", "timeout 3 bash -c '</dev/tcp/localhost/8545' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     networks: [linea]
 
   rollup-boost:
-    image: flashbots/rollup-boost:latest
+    image: rollup-boost-working:latest
     container_name: rollup-boost
     depends_on:
-      sequencer:
+      besu:
         condition: service_healthy
-      op-rbuilder:
-        condition: service_started
     command:
-      - --l2-jwt-path=/jwt/jwt.hex
-      - --l2-url=http://sequencer:8550
-      - --builder-jwt-path=/jwt/jwt.hex
-      - --builder-url=http://op-rbuilder:8551
       - --rpc-host=0.0.0.0
       - --rpc-port=8551
+      - --l2-jwt-path=/jwt/jwt.hex
+      - --l2-url=http://besu:8550
+      - --builder-jwt-path=/jwt/jwt
+      - --builder-url=http://besu:8550
       - --log-level=debug
       - --tracing
       - --metrics
+      # - --flashblocks
+      # - --flashblocks-host=0.0.0.0
+      # - --flashblocks-port=1112
+      # - --flashblocks-builder-url=ws://bproxy:1114
     volumes:
-      - ./jwt:/jwt:ro
+      - ./rollup-boost/:/jwt/
     ports:
-      - "8551:8551" # Rollup-Boost Engine API proxy
-      - "9090:9090" # Rollup-Boost metrics
+      - "9551:8551" # Rollup-Boost Engine API proxy
+      - "9590:9090" # Rollup-Boost metrics
     healthcheck:
       # Simple port check - Rollup-Boost is healthy if port 8551 is accessible
       test:
@@ -110,8 +87,95 @@ services:
       start_period: 30s
     networks: [linea]
 
+  # op-rbuilder:
+  #   container_name: op-rbuilder
+  #   depends_on:
+  #     besu:
+  #       condition: service_healthy
+  #     initialization:
+  #       condition: service_completed_successfully
+  #   command:
+  #   - node
+  #   - --authrpc.port
+  #   - "8551"
+  #   - --authrpc.addr
+  #   - 0.0.0.0
+  #   - --authrpc.jwtsecret
+  #   - /opt/consensys/docker/jwt
+  #   - --http
+  #   - --http.api 
+  #   - eth,net,web3,admin
+  #   - --http.addr
+  #   - 0.0.0.0
+  #   - --http.port
+  #   - "8545"
+  #   - --chain
+  #   - /opt/consensys/reth/configs/genesis-reth.json
+  #   - --datadir
+  #   - /data_op_reth
+  #   - --disable-discovery
+  #   - --color
+  #   - never
+  #   - --metrics
+  #   - 0.0.0.0:9090
+  #   - --port
+  #   - "30303"
+  #   - --builder.enable-revert-protection
+  #   - --trusted-peers
+  #   - enode://14408801a444dafc44afbccce2eb755f902aed3b5743fed787b3c790e021fef28b8c827ed896aa4e8fb46e22bd67c39f994a73768b4b382f8597b0d44370e15d@besu:30303
+  #   - --flashblocks.enabled
+  #   - --flashblocks.addr
+  #   - 0.0.0.0
+  #   - --flashblocks.port
+  #   - "1112"
+  #   extra_hosts:
+  #     host.docker.internal: 172.17.0.1 # todo fix
+  #   image: ghcr.io/flashbots/op-rbuilder:sha-4f1931b
+  #   labels:
+  #     playground: "true"
+  #     playground.session: df7def2e-bf51-43e7-b718-195f8a93bdd7
+  #     port.authrpc: "8551"
+  #     port.flashblocks: "1112"
+  #     port.http: "8545"
+  #     port.metrics: "9090"
+  #     port.rpc: "30303"
+  #     service: op-rbuilder
+  #   networks:
+  #     - linea
+  #   ports:
+  #     - 127.0.0.1:7553:8551
+  #     - 127.0.0.1:7549:8545
+  #     - 127.0.0.1:7091:9090
+  #     - 127.0.0.1:7305:30303
+  #     - 127.0.0.1:7112:1112
+  #   volumes:
+  #     - ./initialization/:/opt/consensys/reth/configs/
+  #     - ./jwt:/opt/consensys/docker/jwt:ro # maru expects jwt here    
+  #     - ./reth/data:/data_op_reth
+  #     - ./reth/artifacts:/artifacts
+
+
+  # bproxy:
+  #   image: ghcr.io/flashbots/bproxy:v0.0.91
+  #   container_name: bproxy
+  #   depends_on:
+  #     besu:
+  #       condition: service_healthy
+  #   command:
+  #     - serve
+  #     - --authrpc-enabled
+  #     - --authrpc-listen-address=0.0.0.0:8651
+  #     - --authrpc-backend=http://op-rbuilder:8550
+  #     - --flashblocks-enabled
+  #     - --flashblocks-listen-address=0.0.0.0:1114
+  #     - --flashblocks-backend=ws://op-rbuilder:7112
+  #   ports:
+  #     - "9651:8651" # Auth RPC
+  #     - "9114:1114" # Flashblocks
+  #   networks: [linea]
+
   maru:
-    image: consensys/maru:${MARU_TAG:-develop}
+    image: consensys/maru:${MARU_TAG:-2f9071c}
     container_name: maru
     depends_on:
       rollup-boost:
@@ -123,19 +187,15 @@ services:
         "-jar",
         "maru.jar",
         "--maru-genesis-file",
-        "configs/genesis.json",
+        "genesis/genesis-maru.json",
         "--config",
         "configs/config.dev.toml",
       ]
     volumes:
-      - ./config.dev.toml:/opt/consensys/maru/configs/config.dev.toml:ro
-      - ./maru/log4j.xml:/opt/consensys/maru/configs/log4j.xml:ro
-      - ./initialization/genesis-maru.json:/opt/consensys/maru/configs/genesis.json:ro
+      - ./maru/:/opt/consensys/maru/configs/
+      - ./initialization/:/opt/consensys/maru/genesis/
       - ./maru/0x1b9abeec3215d8ade8a33607f2cf0f4f60e5f0d0.key:/tmp/maru-db/private-key
-      - ./jwt:/opt/consensys/docker/jwt:ro # maru expects jwt here
+      - ./:/opt/consensys/docker/ # maru expects jwt here
     ports:
-      - "8080:8080"
+      - "9080:8080"
     networks: [linea]
-
-volumes:
-  base_reth_data:

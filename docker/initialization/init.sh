@@ -10,29 +10,24 @@ if [[ ! -f "initialization/genesis-besu.json" && ! -f "initialization/genesis-ge
     cp -T "genesis-geth.json.template" "genesis-geth.json"
     cp -T "genesis-nethermind.json.template" "genesis-nethermind.json"
 
-    shanghai_timestamp=$(($(date +%s) + 33))
-    echo "Shanghai Timestamp: $shanghai_timestamp"
-    sed -i "s/%SHANGHAI_TIME%/$shanghai_timestamp/g" genesis-maru.json
-    sed -i "s/%SHANGHAI_TIME%/$shanghai_timestamp/g" genesis-besu.json
-    sed -i "s/%SHANGHAI_TIME%/$shanghai_timestamp/g" genesis-geth.json
-    shanghai_timestamp_hex=$(printf "0x%x" "$shanghai_timestamp")
-    sed -i "s/%SHANGHAI_TIME%/$shanghai_timestamp_hex/g" genesis-nethermind.json
+    # Linea is already post-Prague - set all forks to genesis (block 0)
+    genesis_timestamp=0
+    echo "All forks activated at genesis (block 0)"
+    sed -i "s/%SHANGHAI_TIME%/$genesis_timestamp/g" genesis-maru.json
+    sed -i "s/%SHANGHAI_TIME%/$genesis_timestamp/g" genesis-besu.json
+    sed -i "s/%SHANGHAI_TIME%/$genesis_timestamp/g" genesis-geth.json
+    genesis_timestamp_hex=$(printf "0x%x" "$genesis_timestamp")
+    sed -i "s/%SHANGHAI_TIME%/$genesis_timestamp_hex/g" genesis-nethermind.json
 
-    cancun_timestamp=$((shanghai_timestamp + 20))
-    echo "Cancun Timestamp: $cancun_timestamp"
-    sed -i "s/%CANCUN_TIME%/$cancun_timestamp/g" genesis-maru.json
-    sed -i "s/%CANCUN_TIME%/$cancun_timestamp/g" genesis-besu.json
-    sed -i "s/%CANCUN_TIME%/$cancun_timestamp/g" genesis-geth.json
-    cancun_timestamp_hex=$(printf "0x%x" "$cancun_timestamp")
-    sed -i "s/%CANCUN_TIME%/$cancun_timestamp_hex/g" genesis-nethermind.json
+    sed -i "s/%CANCUN_TIME%/$genesis_timestamp/g" genesis-maru.json
+    sed -i "s/%CANCUN_TIME%/$genesis_timestamp/g" genesis-besu.json
+    sed -i "s/%CANCUN_TIME%/$genesis_timestamp/g" genesis-geth.json
+    sed -i "s/%CANCUN_TIME%/$genesis_timestamp_hex/g" genesis-nethermind.json
 
-    prague_timestamp=$((cancun_timestamp + 20))
-    echo "Prague Timestamp: $prague_timestamp"
-    sed -i "s/%PRAGUE_TIME%/$prague_timestamp/g" genesis-maru.json
-    sed -i "s/%PRAGUE_TIME%/$prague_timestamp/g" genesis-besu.json
-    sed -i "s/%PRAGUE_TIME%/$prague_timestamp/g" genesis-geth.json
-    prague_timestamp_hex=$(printf "0x%x" "$prague_timestamp")
-    sed -i "s/%PRAGUE_TIME%/$prague_timestamp_hex/g" genesis-nethermind.json
+    sed -i "s/%PRAGUE_TIME%/$genesis_timestamp/g" genesis-maru.json
+    sed -i "s/%PRAGUE_TIME%/$genesis_timestamp/g" genesis-besu.json
+    sed -i "s/%PRAGUE_TIME%/$genesis_timestamp/g" genesis-geth.json
+    sed -i "s/%PRAGUE_TIME%/$genesis_timestamp_hex/g" genesis-nethermind.json
 
 
     CREATE_EMPTY_BLOCKS="${CREATE_EMPTY_BLOCKS:-false}"
